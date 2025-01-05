@@ -7,6 +7,7 @@ fn buffer_to_string(buffer: &[u8]) -> String {
 pub fn read_string(buffer: &[u8], offset: usize) -> String {
     let length_byte = buffer[offset];
     let end_pos = offset + length_byte as usize + 1;
+
     buffer_to_string(&buffer[offset + 1..end_pos])
 }
 

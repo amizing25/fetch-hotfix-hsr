@@ -27,14 +27,13 @@ impl Hotfix {
 
         for field in proto_dec_result.fields {
             let value = field.value.to_string();
-            if value.contains("/asb/") {
-                hotfix.asset_bundle_url = value;
-            } else if value.contains("/design_data/") {
-                hotfix.ex_resource_url = value;
-            } else if value.contains("/lua/") {
-                hotfix.lua_url = value;
-            } else if value.contains("/ifix/") {
-                hotfix.ifix_url = value;
+
+            match value {
+                v if v.contains("/asb/") => hotfix.asset_bundle_url = v,
+                v if v.contains("/design_data/") => hotfix.ex_resource_url = v,
+                v if v.contains("/lua/") => hotfix.lua_url = v,
+                v if v.contains("/ifix/") => hotfix.ifix_url = v,
+                _ => {}
             }
         }
 

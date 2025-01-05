@@ -1,3 +1,19 @@
+/// A decoder responsible for parsing raw byte data into structured information.
+#[derive(Debug)]
+pub struct Decoder {
+    data: Vec<u8>,
+    idx: usize,
+}
+
+/// Errors that can occur during the decoding process.
+#[derive(Debug, thiserror::Error)]
+pub enum DecodeError {
+    #[error("Unsupported wire type: {0}")]
+    UnsupportedWireType(u8),
+    #[error("Invalid memory access detected")]
+    InvalidMemoryAccess,
+}
+
 /// Represents the type of wire format for a field in the decoding process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WireType {
@@ -13,20 +29,6 @@ pub enum WireType {
     EGroup = 4,
     /// 32-bit integer (i32).
     I32 = 5,
-}
-
-impl WireType {
-    /// Converts a raw `u8` value into a `WireType` enum variant.
-    /// Returns an error if the value does not correspond to a valid `WireType`.
-    pub fn from_u8(value: u8) -> Result<Self, DecodeError> {
-        match value {
-            0 => Ok(WireType::VarInt),
-            1 => Ok(WireType::I64),
-            2 => Ok(WireType::Len),
-            5 => Ok(WireType::I32),
-            _ => Err(DecodeError::UnsupportedWireType(value)),
-        }
-    }
 }
 
 /// Contains the decoded field information from a decoding operation.
@@ -62,6 +64,13 @@ pub struct DecodingResult {
     pub unprocessed: Vec<u8>,
 }
 
+/// Represents the result of a simplified decoding process.
+#[derive(Debug, Clone)]
+pub struct SimpleDecodingResult {
+    /// A vector of simplified decoded fields.
+    pub fields: Vec<SimpleDecoded>,
+}
+
 /// Simplified representation of a decoded field for easier usage.
 #[derive(Debug, Clone)]
 pub struct SimpleDecoded {
@@ -84,53 +93,6 @@ pub enum SimpleDecodedValue {
     Nested(SimpleDecodingResult),
 }
 
-impl std::fmt::Display for SimpleDecodedValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn parse_buffer(input: &str) -> Option<String> {
-            input
-                .strip_prefix("Buffer([")
-                .and_then(|start| start.strip_suffix("])"))
-                .and_then(|end| {
-                    end.split(", ")
-                        .map(|byte_str| byte_str.parse::<u8>())
-                        .collect::<Result<Vec<_>, _>>()
-                        .ok()
-                        .and_then(|bytes| String::from_utf8(bytes).ok())
-                })
-        }
-
-        match self {
-            SimpleDecodedValue::String(s) => {
-                write!(f, "{}", parse_buffer(s).unwrap_or_else(|| s.clone()))
-            }
-            SimpleDecodedValue::Nested(nested) => write!(f, "{:?}", nested),
-        }
-    }
-}
-
-/// Represents the result of a simplified decoding process.
-#[derive(Debug, Clone)]
-pub struct SimpleDecodingResult {
-    /// A vector of simplified decoded fields.
-    pub fields: Vec<SimpleDecoded>,
-}
-
-/// A decoder responsible for parsing raw byte data into structured information.
-#[derive(Debug)]
-pub struct Decoder {
-    data: Vec<u8>,
-    idx: usize,
-}
-
-/// Errors that can occur during the decoding process.
-#[derive(Debug, thiserror::Error)]
-pub enum DecodeError {
-    #[error("Unsupported wire type: {0}")]
-    UnsupportedWireType(u8),
-    #[error("Invalid memory access detected")]
-    InvalidMemoryAccess,
-}
-
 impl Decoder {
     /// Creates a new `Decoder` instance with the given data.
     pub fn new(data: Vec<u8>) -> Self {
@@ -138,10 +100,9 @@ impl Decoder {
     }
 
     /// Reads the next byte from the data stream, advancing the index.
-    pub fn next_byte(&mut self) -> Result<u8, DecodeError> {
+    pub fn next_byte(&mut self) -> Result<&u8, DecodeError> {
         self.data
             .get(self.idx)
-            .cloned()
             .ok_or(DecodeError::InvalidMemoryAccess)
             .map(|byte| {
                 self.idx += 1;
@@ -213,51 +174,31 @@ impl Decoder {
             };
 
             fields.push(Decoded {
-                field,
-                wire_type,
+                field: field,
+                wire_type: wire_type,
                 is_object: value_decoded,
-                value,
+                value: value,
             });
         }
 
         Ok(DecodingResult {
-            fields,
+            fields: fields,
             unprocessed: self.read(self.remaining())?,
         })
     }
 }
 
-pub fn simplify(result: DecodingResult) -> SimpleDecodingResult {
-    SimpleDecodingResult {
-        fields: result
-            .fields
-            .into_iter()
-            .map(|field| {
-                let wire_type = wire_type_to_str(field.wire_type);
-                let value = if field.is_object {
-                    SimpleDecodedValue::Nested(simplify(field.value.unwrap_nested()))
-                } else {
-                    SimpleDecodedValue::String(format!("{:?}", field.value))
-                };
-
-                SimpleDecoded {
-                    field: field.field,
-                    wire_type,
-                    is_object: field.is_object,
-                    value,
-                }
-            })
-            .collect(),
-    }
-}
-
-fn wire_type_to_str(wire_type: WireType) -> String {
-    match wire_type {
-        WireType::VarInt => "varint".to_string(),
-        WireType::I64 => "i64".to_string(),
-        WireType::Len => "len".to_string(),
-        WireType::I32 => "i32".to_string(),
-        _ => "unknown".to_string(),
+impl WireType {
+    /// Converts a raw `u8` value into a `WireType` enum variant.
+    /// Returns an error if the value does not correspond to a valid `WireType`.
+    pub fn from_u8(value: u8) -> Result<Self, DecodeError> {
+        match value {
+            0 => Ok(WireType::VarInt),
+            1 => Ok(WireType::I64),
+            2 => Ok(WireType::Len),
+            5 => Ok(WireType::I32),
+            _ => Err(DecodeError::UnsupportedWireType(value)),
+        }
     }
 }
 
@@ -269,6 +210,71 @@ impl DecodedValue {
             result
         } else {
             panic!("Expected a nested value")
+        }
+    }
+}
+
+impl DecodingResult {
+    /// Simplifies the decoding result into a `SimpleDecodingResult`.
+    /// Converts the decoded fields into a simpler format, with nested objects being recursively simplified.
+    pub fn simplify(self) -> SimpleDecodingResult {
+        // fn wire_type_to_str(wire_type: WireType) -> String {
+        //     match wire_type {
+        //         WireType::VarInt => "varint".to_string(),
+        //         WireType::I64 => "i64".to_string(),
+        //         WireType::Len => "len".to_string(),
+        //         WireType::I32 => "i32".to_string(),
+        //         _ => "unknown".to_string(),
+        //     }
+        // }
+
+        SimpleDecodingResult {
+            fields: self
+                .fields
+                .into_iter()
+                .map(|field| {
+                    // let wire_type = wire_type_to_str(field.wire_type);
+                    let value = if field.is_object {
+                        SimpleDecodedValue::Nested(field.value.unwrap_nested().simplify())
+                    } else {
+                        SimpleDecodedValue::String(format!("{:?}", field.value))
+                    };
+
+                    SimpleDecoded {
+                        field: field.field,
+                        wire_type: String::with_capacity(0),
+                        is_object: field.is_object,
+                        value: value,
+                    }
+                })
+                .collect(),
+        }
+    }
+}
+
+impl std::fmt::Display for SimpleDecodedValue {
+    /// Formats the `SimpleDecodedValue` for display.
+    /// If the value is a `Buffer`, it attempts to convert the raw bytes into a UTF-8 string.
+    /// If the value is a `Nested` object, it formats it as a debug string.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn parse_buffer(input: &str) -> Option<String> {
+            input
+                .strip_prefix("Buffer([")
+                .and_then(|start| start.strip_suffix("])"))
+                .and_then(|end| {
+                    end.split(", ")
+                        .map(|byte_str| byte_str.parse::<u8>())
+                        .collect::<Result<Vec<_>, _>>()
+                        .ok()
+                        .and_then(|bytes| String::from_utf8(bytes).ok())
+                })
+        }
+
+        match self {
+            SimpleDecodedValue::String(s) => {
+                write!(f, "{}", parse_buffer(s).unwrap_or(String::from(s)))
+            }
+            SimpleDecodedValue::Nested(nested) => write!(f, "{:?}", nested),
         }
     }
 }

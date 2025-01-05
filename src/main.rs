@@ -8,7 +8,7 @@ use std::time::Instant;
 mod proto;
 use proto::Dispatch;
 mod decode;
-use decode::{Decoder, simplify};
+use decode::Decoder;
 mod util;
 use util::{
     get_binary_version_path, get_client_config_path, get_dispatch_seed, get_last_buffer_start,
@@ -50,16 +50,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let (version_str, seed_str) = match get_dispatch_seed(&buffer_splits, &constructed_string) {
             Some(v) => v,
-            None => { println!("->> Dispatch seed not found."); return Ok(()) }
+            None => {
+                println!("->> Dispatch seed not found.");
+                return Ok(());
+            }
         };
 
         println!("->> Dispatch Seed: {}", seed_str);
 
         let version_split: Vec<&str> = version_str.split('-').collect();
 
-        let version = version_split.get(4).unwrap_or(&"").to_string();
+        let version = version_split.get(4).unwrap_or(&"");
 
-        let build = version_split.get(5).unwrap_or(&"").to_string();
+        let build = version_split.get(5).unwrap_or(&"");
 
         println!("->> Version: {}", version);
 
@@ -72,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("->> Dispatch URL: {}", query_dispatch_url);
 
-        let client = Client::new();
+        let client = &Client::new();
 
         let query_dispatch_response = client.get(&query_dispatch_url).send().await?.text().await?;
 
@@ -102,7 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let gateserver_decoded_message = decoder.decode()?;
 
-        let simplified_gateserver = simplify(gateserver_decoded_message);
+        let simplified_gateserver = gateserver_decoded_message.simplify();
 
         let hotfix_json = Hotfix::create_from_simple_message(simplified_gateserver);
 
@@ -121,6 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     } else {
         println!("->> No folder selected.");
+
         Ok(())
     }
 }

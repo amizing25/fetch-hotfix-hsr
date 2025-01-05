@@ -1,0 +1,76 @@
+cargo-features = ["codegen-backend"]
+
+[package]
+name = "fetch-hotfix"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+prost = "0.13.4"
+prost-types = "0.13.4"
+rbase64 = "2.0.3"
+reqwest = "0.12.12"
+rfd = "0.15.2"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.134"
+thiserror = "2.0.9"
+tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"] }
+
+# # Commented by default
+# [[bin]]
+# name = "fetch-hotfix"
+# path = "src/main.rs"
+
+# [lib]
+# name = "fetch-hotfix"
+# path = "src/lib.rs"
+
+[profile.release]
+codegen-backend = "llvm"
+opt-level = 3
+debug = false
+split-debuginfo = "..."
+strip = true
+debug-assertions = false
+overflow-checks = false
+lto = "fat"
+panic = "abort"
+incremental = false
+codegen-units = 1
+rpath = false
+
+[profile.release.build-override]
+codegen-backend = "llvm"
+opt-level = 3
+debug = false
+split-debuginfo = "..."
+strip = true
+debug-assertions = false
+overflow-checks = false
+incremental = false
+codegen-units = 1
+
+[profile.dev]
+codegen-backend = "cranelift"
+opt-level = 0
+debug = true
+split-debuginfo = "..."
+strip = "none"
+debug-assertions = true
+overflow-checks = true
+lto = "off"
+panic = "abort"
+incremental = true
+codegen-units = 384
+rpath = false
+
+[profile.dev.build-override]
+codegen-backend = "cranelift"
+opt-level = 0
+debug = true
+split-debuginfo = "..."
+strip = "none"
+debug-assertions = true
+overflow-checks = true
+incremental = true
+codegen-units = 384

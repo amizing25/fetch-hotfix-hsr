@@ -1,21 +1,22 @@
 use prost::Message;
 use reqwest::Client;
-use std::fs;
 use std::io::Write;
-use std::path::Path;
 use std::time::Instant;
+use std::{fs, path::PathBuf};
 
 mod proto;
 use proto::Dispatch;
 mod decode;
 use decode::Decoder;
-mod util;
-use util::{
-    get_binary_version_path, get_client_config_path, get_dispatch_seed, get_last_buffer_start,
-    last_index_of, read_string, read_uint24_be, select_folder, split_buffer, strip_empty_bytes,
-};
+mod binary_version;
+mod client_config;
 mod hotfix;
+
 use hotfix::Hotfix;
+mod util;
+use binary_version::BinaryVersionData;
+use client_config::ClientStartupConfig;
+use util::{get_binary_version_path, get_client_config_path, select_folder};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,54 +24,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let start_time = Instant::now();
 
         let binary_version_path = get_binary_version_path(&folder_path);
-
         let client_config_path = get_client_config_path(&folder_path);
 
-        let binary_version_buffer = fs::read(&binary_version_path)?;
-
         let client_config_buffer = fs::read(&client_config_path)?;
+        let client_config = ClientStartupConfig::try_from(client_config_buffer)?;
 
-        let client_config_buffer_parts = strip_empty_bytes(&client_config_buffer);
+        let binary_version_buffer = fs::read(&binary_version_path)?;
+        let binary_version = BinaryVersionData::try_from(binary_version_buffer)?;
 
-        let query_dispatch_base = read_string(last_index_of(&client_config_buffer_parts, 0x00), 0);
+        let game_version = binary_version
+            .get_server_pak_type_version()
+            .expect("cannot find game version!");
 
-        let last_buffer_start = get_last_buffer_start(&binary_version_buffer);
-
-        let last_buffer = &binary_version_buffer[last_buffer_start..];
-
-        let buffer_splits = split_buffer(last_buffer, 0x00);
-
-        let branch = read_string(&binary_version_buffer, 1);
-
-        let revision = read_uint24_be(buffer_splits[0], 0);
-
-        let time = read_string(buffer_splits[1], 0);
-
-        let constructed_string = format!("{}-{}-{}", time, branch, revision);
-
-        let (version_str, seed_str) = match get_dispatch_seed(&buffer_splits, &constructed_string) {
-            Some(v) => v,
-            None => {
-                println!("->> Dispatch seed not found.");
-                return Ok(());
-            }
-        };
-
-        println!("->> Dispatch Seed: {}", seed_str);
-
-        let version_split: Vec<&str> = version_str.split('-').collect();
-
-        let version = version_split.get(4).unwrap_or(&"");
-
-        let build = version_split.get(5).unwrap_or(&"");
-
-        println!("->> Version: {}", version);
-
-        println!("->> Build: {}", build);
+        println!("->> Version: {}", binary_version.version_string);
+        println!("->> Build: {}", binary_version.branch);
 
         let query_dispatch_url = format!(
             "{}?version={}&language_type=3&platform_type=3&channel_id=1&sub_channel_id=1&is_new_format=1",
-            query_dispatch_base, version
+            client_config
+                .global_dispatch_url_list
+                .first()
+                .expect("cannot found dispatch url!"),
+            game_version
         );
 
         println!("->> Dispatch URL: {}", query_dispatch_url);
@@ -92,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let query_gateway_url = format!(
             "{}?version={}&platform_type=1&language_type=3&dispatch_seed={}&channel_id=1&sub_channel_id=1&is_need_url=1",
-            query_gateway_base, version, seed_str
+            query_gateway_base, game_version, binary_version.dispatch_seed
         );
 
         println!("->> Gateway URL: {}", query_gateway_url);
@@ -111,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let pretty_json = serde_json::to_string_pretty(&hotfix_json)?;
 
-        let output_path = Path::new("hotfix.json");
+        let output_path = PathBuf::from(format!("hotfix-{}.json", game_version));
 
         let mut file = fs::File::create(output_path)?;
 

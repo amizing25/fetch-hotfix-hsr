@@ -80,9 +80,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let gateserver_decoded_message = decoder.decode()?;
 
-        let simplified_gateserver = gateserver_decoded_message.simplify();
-
-        let hotfix_json = Hotfix::create_from_simple_message(simplified_gateserver);
+        let (hotfix_json, gateserver_proto) = Hotfix::create_from_simple_message(
+            gateserver_decoded_message,
+            dispatch_decoded_message,
+        );
 
         let pretty_json = serde_json::to_string_pretty(&hotfix_json)?;
 
@@ -93,6 +94,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         file.write_all(pretty_json.as_bytes())?;
 
         println!("->> Finished writing hotfix.json");
+
+        let output_path = PathBuf::from(format!("Gateserver-{}.proto", game_version));
+        
+        let mut file = fs::File::create(output_path)?;
+        
+        file.write_all(gateserver_proto.as_bytes())?;
+        
+        println!("->> Finished writing Gateserver.proto");
 
         println!("->> Elapsed time: {}s", start_time.elapsed().as_secs_f32());
 

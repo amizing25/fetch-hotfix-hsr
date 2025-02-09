@@ -1,4 +1,7 @@
-use std::io::{Cursor, Read};
+use std::{
+    io::{Cursor, Read},
+    net::Ipv4Addr,
+};
 use varint_rs::VarintReader;
 
 /// Opens a file dialog to allow the user to select a folder.
@@ -11,13 +14,23 @@ pub fn select_folder() -> Option<std::path::PathBuf> {
 }
 
 /// Returns the path to the "BinaryVersion.bytes" file located under "StarRail_Data/StreamingAssets" from the given base path.
-pub fn get_binary_version_path(base: &std::path::PathBuf) -> std::path::PathBuf {
+pub fn get_binary_version_path(base: &std::path::Path) -> std::path::PathBuf {
     base.join("StarRail_Data/StreamingAssets/BinaryVersion.bytes")
 }
 
 /// Returns the path to the "ClientConfig.bytes" file located under "StarRail_Data/StreamingAssets" from the given base path.
-pub fn get_client_config_path(base: &std::path::PathBuf) -> std::path::PathBuf {
+pub fn get_client_config_path(base: &std::path::Path) -> std::path::PathBuf {
     base.join("StarRail_Data/StreamingAssets/ClientConfig.bytes")
+}
+
+pub fn get_ip_address(s: &str) -> Option<String> {
+    s.parse::<Ipv4Addr>().map(|v| v.to_string()).ok()
+}
+
+pub fn is_ec2b_base64(s: &str) -> bool {
+    rbase64::decode(s)
+        .map(|v| v.starts_with(&[69, 99, 50, 98])) // "Ec2b"
+        .unwrap_or_default()
 }
 
 pub trait CursorExt {
@@ -42,7 +55,7 @@ impl CursorExt for Cursor<Vec<u8>> {
         let length = self.read_u32_varint()? as usize;
         let mut buffer = vec![0u8; length];
         self.read_exact(&mut buffer)?;
-        return Ok(String::from_utf8_lossy(&buffer).to_string());
+        Ok(String::from_utf8_lossy(&buffer).to_string())
     }
 
     fn read_u32_be(&mut self) -> Result<u32, Self::Error> {

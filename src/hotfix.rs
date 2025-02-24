@@ -44,7 +44,8 @@ impl Hotfix {
                         if num == 1 {
                             field_content = format!("\tbool unk{unk_idx} = {};\n", field.field);
                             unk_idx += 1;
-                        } else {
+                            // Ensure value is within valid port range
+                        } else if (23301..=23302).contains(&num) {
                             field_content = format!("\tuint32 port = {};\n", field.field);
                         }
                     }
